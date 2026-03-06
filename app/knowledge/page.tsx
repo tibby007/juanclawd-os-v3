@@ -1,12 +1,12 @@
 export default function KnowledgePage() {
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Knowledge</h1>
-        <p className="text-zinc-500 text-sm mt-1">Memory files, research, and documents</p>
-      </div>
-      <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-8 text-center">
-        <p className="text-zinc-500">Coming in Phase 3</p>
+    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black p-8">
+      <div className="mx-auto max-w-6xl">
+        <h1 className="text-4xl font-bold text-white">Knowledge</h1>
+        <p className="mt-2 text-xl text-zinc-400">Research, docs, and institutional memory</p>
+        <div className="mt-12 flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-20 backdrop-blur-xl">
+          <p className="text-2xl text-zinc-500">Coming in Phase 3</p>
+        </div>
       </div>
     </div>
   );
