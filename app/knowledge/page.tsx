@@ -1,16 +1,21 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, FileText, X, Edit2, Save, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, FileText, BookOpen, Edit3, Save, X, Clock, HardDrive } from 'lucide-react';
 
-// --- Types ---
+// ---------- Types ----------
+
 interface MemoryFile {
   name: string;
   path: string;
   modified: string;
   preview: string;
   content: string;
+}
+
+interface MemoryFiles {
+  files: MemoryFile[];
 }
 
 interface MatchLine {
@@ -32,77 +37,53 @@ interface DocFile {
   preview: string;
 }
 
-// --- Helpers ---
+// ---------- Helpers ----------
+
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  try {
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  } catch { return iso; }
 }
 
 function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// --- Skeleton ---
-function Skeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-20 rounded-xl bg-zinc-800 animate-pulse" />
-      ))}
-    </div>
-  );
-}
+// ---------- Memory Tab ----------
 
-// --- Toast ---
-function Toast({ message, type }: { message: string; type: 'success' | 'error' }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      className={`fixed bottom-6 right-6 z-50 rounded-xl px-4 py-3 text-sm font-medium shadow-xl ${
-        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-      }`}
-    >
-      {message}
-    </motion.div>
-  );
-}
-
-// --- Memory Tab ---
 function MemoryTab() {
   const [files, setFiles] = useState<MemoryFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch('/api/memory')
-      .then((r) => r.json() as Promise<{ files: MemoryFile[] }>)
-      .then((d) => setFiles(d.files ?? []))
-      .catch(() => {})
+      .then((r) => r.json())
+      .then((d: MemoryFiles) => setFiles(d.files ?? []))
+      .catch(() => setError('Failed to load memory files'))
       .finally(() => setLoading(false));
   }, []);
 
-  const doSearch = useCallback(async (q: string) => {
+  const doSearch = useCallback((q: string) => {
     if (!q.trim()) { setSearchResults(null); return; }
     setSearching(true);
-    try {
-      const r = await fetch(`/api/search/memory?q=${encodeURIComponent(q)}`);
-      const d = await r.json() as { results: SearchResult[] };
-      setSearchResults(d.results ?? []);
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
+    fetch(`/api/search/memory?q=${encodeURIComponent(q)}`)
+      .then((r) => r.json())
+      .then((d: { results: SearchResult[] }) => setSearchResults(d.results ?? []))
+      .catch(() => setSearchResults([]))
+      .finally(() => setSearching(false));
   }, []);
 
-  const onQueryChange = (val: string) => {
+  const handleSearch = (val: string) => {
     setQuery(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => doSearch(val), 300);
@@ -114,88 +95,106 @@ function MemoryTab() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
         <input
-          type="text"
           value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
           placeholder="Search memory files..."
-          className="w-full rounded-xl border border-white/10 bg-zinc-800/60 pl-10 pr-10 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+          className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-4 text-sm text-white placeholder-zinc-500 focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
         />
-        {query && (
-          <button onClick={() => { setQuery(''); setSearchResults(null); }} className="absolute right-3 top-1/2 -translate-y-1/2">
-            <X className="h-4 w-4 text-zinc-400 hover:text-white" />
-          </button>
+        {searching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
         )}
       </div>
 
       {/* Search results */}
       {searchResults !== null ? (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">{searchResults.length} file{searchResults.length !== 1 ? 's' : ''} matched</p>
-          {searching && <div className="h-10 rounded-xl bg-zinc-800 animate-pulse" />}
-          {!searching && searchResults.length === 0 && (
-            <p className="text-zinc-400 text-sm">No results found.</p>
-          )}
-          {!searching && searchResults.map((result) => (
-            <div key={result.path} className="rounded-xl border border-white/10 bg-zinc-800/40 overflow-hidden">
-              <div className="px-4 py-3 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-violet-400 shrink-0" />
-                <span className="text-sm font-medium text-white">{result.file}</span>
-              </div>
-              {result.matches.length > 0 && (
-                <div className="border-t border-white/10 px-4 py-2 space-y-1">
-                  {result.matches.map((m) => (
-                    <div key={m.line} className="flex gap-2 text-xs">
-                      <span className="text-zinc-600 w-8 shrink-0">L{m.line}</span>
-                      <span className="text-zinc-300 line-clamp-1">
-                        {m.text.replace(
-                          new RegExp(query, 'gi'),
-                          (match) => `【${match}】`
-                        )}
-                      </span>
-                    </div>
-                  ))}
+          <p className="text-xs text-zinc-500">{searchResults.length} file(s) matched</p>
+          {searchResults.length === 0 ? (
+            <p className="text-zinc-500 text-sm">No results for &ldquo;{query}&rdquo;</p>
+          ) : (
+            searchResults.map((result) => (
+              <div key={result.path} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="h-4 w-4 text-violet-400" />
+                  <p className="text-sm font-semibold text-white">{result.file}</p>
                 </div>
-              )}
-            </div>
-          ))}
+                {result.matches.map((m) => (
+                  <div key={m.line} className="rounded-lg bg-zinc-900/60 px-3 py-2 mb-1">
+                    <span className="text-xs text-zinc-500 mr-2">L{m.line}</span>
+                    <span className="text-xs text-zinc-300 font-mono">
+                      {m.text.replace(
+                        new RegExp(`(${query})`, 'gi'),
+                        (match) => `【${match}】`
+                      ).split('【').map((part, i) =>
+                        i === 0 ? part : (
+                          <>
+                            <mark key={i} className="bg-violet-500/30 text-violet-300 rounded px-0.5">
+                              {part.split('】')[0]}
+                            </mark>
+                            {part.split('】').slice(1)}
+                          </>
+                        )
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
         </div>
       ) : loading ? (
-        <Skeleton />
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-20 rounded-xl bg-zinc-800 animate-pulse" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400 text-sm">{error}</div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {files.map((file) => (
-            <div key={file.path} className="rounded-xl border border-white/10 bg-zinc-800/40 overflow-hidden">
+            <motion.div
+              key={file.path}
+              layout
+              className="rounded-xl border border-white/10 bg-white/5 overflow-hidden"
+            >
               <button
-                onClick={() => setExpanded((e) => (e === file.path ? null : file.path))}
-                className="w-full flex items-start gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+                className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-white/5 transition-colors"
+                onClick={() => setExpanded(expanded === file.path ? null : file.path)}
               >
-                {expanded === file.path
-                  ? <ChevronDown className="h-4 w-4 text-zinc-400 mt-0.5 shrink-0" />
-                  : <ChevronRight className="h-4 w-4 text-zinc-400 mt-0.5 shrink-0" />
-                }
+                <div className="flex items-center gap-2 mt-0.5">
+                  <div className="w-1.5 h-8 rounded-full bg-violet-500/50" />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-medium text-white">{file.name}</span>
-                    <span className="text-xs text-zinc-500">{formatDate(file.modified)}</span>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-sm font-semibold text-white truncate">{file.name}</span>
+                    <span className="text-xs text-zinc-500 shrink-0 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatDate(file.modified)}
+                    </span>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{file.preview}</p>
+                  <p className="text-xs text-zinc-500 line-clamp-2">{file.preview}</p>
                 </div>
               </button>
               <AnimatePresence>
                 {expanded === file.path && (
                   <motion.div
-                    initial={{ height: 0 }}
-                    animate={{ height: 'auto' }}
-                    exit={{ height: 0 }}
-                    className="overflow-hidden border-t border-white/10"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
                   >
-                    <pre className="px-4 py-4 text-xs text-zinc-300 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
-                      {file.content}
-                    </pre>
+                    <div className="px-4 pb-4">
+                      <div className="rounded-lg bg-zinc-900/80 p-4 max-h-96 overflow-y-auto">
+                        <pre className="text-xs text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">
+                          {file.content}
+                        </pre>
+                      </div>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -203,88 +202,70 @@ function MemoryTab() {
   );
 }
 
-// --- Documents Tab ---
+// ---------- Documents Tab ----------
+
 function DocumentsTab() {
   const [docs, setDocs] = useState<DocFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [selected, setSelected] = useState<DocFile | null>(null);
-  const [content, setContent] = useState('');
-  const [editContent, setEditContent] = useState('');
+  const [docContent, setDocContent] = useState('');
   const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
-  const loadDocs = useCallback(() => {
-    setLoading(true);
+  useEffect(() => {
     fetch('/api/documents')
-      .then((r) => r.json() as Promise<{ documents: DocFile[] }>)
-      .then((d) => setDocs(d.documents ?? []))
-      .catch(() => {})
+      .then((r) => r.json())
+      .then((d: { documents: DocFile[] }) => setDocs(d.documents ?? []))
+      .catch(() => setError('Failed to load documents'))
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { loadDocs(); }, [loadDocs]);
-
-  const openDoc = async (doc: DocFile) => {
+  // When a doc is selected, load its content from memory data (already fetched) or refetch
+  const selectDoc = (doc: DocFile) => {
     setSelected(doc);
     setEditing(false);
-    // Fetch full content
-    try {
-      const r = await fetch(`/api/documents?path=${encodeURIComponent(doc.path)}`);
-      const d = await r.json() as { documents: DocFile[] };
-      const found = d.documents.find((f) => f.path === doc.path);
-      // For full content, use the memory API for memory files, otherwise use documents
-      // Actually, /api/documents doesn't return content - load via documents/save path
-      // We'll just read from the list preview and show it. For full content, use a direct load.
-      setContent(found?.preview ?? doc.preview);
-    } catch {
-      setContent(doc.preview);
-    }
-    // Load full content from a separate fetch
-    loadFullContent(doc.path);
-  };
-
-  const loadFullContent = async (path: string) => {
-    try {
-      const r = await fetch(`/api/documents/content?path=${encodeURIComponent(path)}`);
-      if (r.ok) {
-        const d = await r.json() as { content: string };
-        setContent(d.content);
-      }
-    } catch {
-      // use preview
-    }
+    // Fetch content
+    fetch('/api/documents')
+      .then((r) => r.json())
+      .then((d: { documents: Array<DocFile & { content?: string }> }) => {
+        const full = d.documents?.find((x) => x.path === doc.path);
+        setDocContent(full?.content ?? '');
+      })
+      .catch(() => setDocContent(''));
   };
 
   const startEdit = () => {
-    setEditContent(content);
+    setEditValue(docContent);
     setEditing(true);
   };
 
   const cancelEdit = () => {
     setEditing(false);
+    setEditValue('');
   };
 
-  const saveDoc = async () => {
+  const saveEdit = async () => {
     if (!selected) return;
     setSaving(true);
     try {
       const r = await fetch('/api/documents/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: selected.path, content: editContent }),
+        body: JSON.stringify({ path: selected.path, content: editValue }),
       });
       const d = await r.json() as { ok?: boolean; error?: string };
       if (d.ok) {
-        setContent(editContent);
+        setDocContent(editValue);
         setEditing(false);
-        setToast({ message: 'Saved successfully', type: 'success' });
-        loadDocs();
+        setToast({ msg: 'Saved successfully', ok: true });
       } else {
-        setToast({ message: d.error ?? 'Save failed', type: 'error' });
+        setToast({ msg: d.error ?? 'Save failed', ok: false });
       }
     } catch {
-      setToast({ message: 'Network error', type: 'error' });
+      setToast({ msg: 'Network error', ok: false });
     } finally {
       setSaving(false);
       setTimeout(() => setToast(null), 3000);
@@ -292,32 +273,35 @@ function DocumentsTab() {
   };
 
   return (
-    <div className="flex gap-6 h-full">
+    <div className="flex gap-6">
       {/* List */}
       <div className="w-80 shrink-0 space-y-2">
         {loading ? (
-          <Skeleton />
-        ) : docs.length === 0 ? (
-          <p className="text-zinc-400 text-sm">No documents found.</p>
+          [...Array(5)].map((_, i) => (
+            <div key={i} className="h-16 rounded-xl bg-zinc-800 animate-pulse" />
+          ))
+        ) : error ? (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400 text-sm">{error}</div>
         ) : (
           docs.map((doc) => (
             <button
               key={doc.path}
-              onClick={() => openDoc(doc)}
-              className={`w-full text-left rounded-xl border px-4 py-3 transition-colors hover:bg-white/5 ${
+              onClick={() => selectDoc(doc)}
+              className={`w-full rounded-xl border p-3 text-left transition-colors ${
                 selected?.path === doc.path
                   ? 'border-violet-500/50 bg-violet-500/10'
-                  : 'border-white/10 bg-zinc-800/40'
+                  : 'border-white/10 bg-white/5 hover:bg-white/8'
               }`}
             >
               <div className="flex items-start gap-2">
                 <FileText className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{doc.name}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{formatDate(doc.modified)} · {formatSize(doc.size)}</p>
-                  <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{doc.preview}</p>
+                  <p className="text-xs font-semibold text-white truncate">{doc.name}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">{formatDate(doc.modified)}</p>
+                  <p className="text-xs text-zinc-600">{formatSize(doc.size)}</p>
                 </div>
               </div>
+              <p className="text-xs text-zinc-500 mt-1.5 line-clamp-2 pl-6">{doc.preview}</p>
             </button>
           ))
         )}
@@ -326,103 +310,116 @@ function DocumentsTab() {
       {/* Reading pane */}
       <div className="flex-1 min-w-0">
         {selected ? (
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/60 h-full flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+          <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-violet-400" />
+                <BookOpen className="h-4 w-4 text-violet-400" />
                 <span className="text-sm font-semibold text-white">{selected.name}</span>
-                <span className="text-xs text-zinc-500">{formatDate(selected.modified)}</span>
               </div>
               <div className="flex items-center gap-2">
-                {editing ? (
-                  <>
-                    <button
-                      onClick={saveDoc}
-                      disabled={saving}
-                      className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 transition-colors"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      {saving ? 'Saving…' : 'Save'}
-                    </button>
-                    <button
-                      onClick={cancelEdit}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                  </>
-                ) : (
+                {!editing ? (
                   <button
                     onClick={startEdit}
-                    className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg bg-violet-500/20 px-3 py-1.5 text-xs text-violet-400 hover:bg-violet-500/30 transition-colors"
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit3 className="h-3 w-3" />
                     Edit
                   </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={cancelEdit}
+                      className="flex items-center gap-1.5 rounded-lg bg-zinc-700/50 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveEdit}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs text-white hover:bg-violet-500 transition-colors disabled:opacity-50"
+                    >
+                      <Save className="h-3 w-3" />
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
                 )}
-                <button onClick={() => setSelected(null)} className="text-zinc-500 hover:text-white transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-5">
+            <div className="p-5 max-h-[600px] overflow-y-auto">
               {editing ? (
                 <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full h-full min-h-[400px] rounded-xl border border-white/10 bg-zinc-800/60 p-4 font-mono text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className="w-full h-96 rounded-lg bg-zinc-900/80 p-4 text-xs text-zinc-300 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-violet-500/30 resize-none"
                 />
               ) : (
-                <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{content}</pre>
+                <pre className="text-xs text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">
+                  {docContent || 'Loading…'}
+                </pre>
               )}
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full rounded-2xl border border-white/10 bg-zinc-900/40">
-            <div className="text-center">
-              <FileText className="h-10 w-10 text-zinc-600 mx-auto mb-2" />
-              <p className="text-zinc-500 text-sm">Select a document to read</p>
-            </div>
+          <div className="flex flex-col items-center justify-center h-64 rounded-2xl border border-dashed border-white/10 text-zinc-500">
+            <HardDrive className="h-8 w-8 mb-2" />
+            <p className="text-sm">Select a document to read</p>
           </div>
         )}
-      </div>
 
-      <AnimatePresence>
-        {toast && <Toast message={toast.message} type={toast.type} />}
-      </AnimatePresence>
+        {/* Toast */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className={`fixed bottom-6 right-6 rounded-xl px-4 py-3 text-sm font-medium shadow-xl ${
+                toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+              }`}
+            >
+              {toast.msg}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
 
-// --- Main Page ---
+// ---------- Main Page ----------
+
+type TabId = 'memory' | 'documents';
+
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'memory',    label: 'Memory',    icon: BookOpen },
+  { id: 'documents', label: 'Documents', icon: FileText },
+];
+
 export default function KnowledgePage() {
-  const [tab, setTab] = useState<'memory' | 'documents'>('memory');
+  const [tab, setTab] = useState<TabId>('memory');
 
   return (
-    <div className="space-y-8 min-h-screen">
+    <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-4xl font-bold text-white">Knowledge</h1>
-        <p className="mt-1 text-zinc-400">Memory files · Docs · Institutional knowledge</p>
+        <p className="mt-2 text-xl text-zinc-400">Research, docs, and institutional memory</p>
       </motion.div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 rounded-xl border border-white/10 bg-zinc-900/60 p-1 w-fit">
-        {(['memory', 'documents'] as const).map((t) => (
+      {/* Tabs */}
+      <div className="flex gap-1 rounded-xl border border-white/10 bg-white/5 p-1 w-fit">
+        {TABS.map(({ id, label, icon: Icon }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`relative rounded-lg px-5 py-2 text-sm font-medium transition-colors capitalize ${
-              tab === t ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              tab === id
+                ? 'bg-violet-600 text-white shadow'
+                : 'text-zinc-400 hover:text-white'
             }`}
           >
-            {tab === t && (
-              <motion.div
-                layoutId="knowledge-tab"
-                className="absolute inset-0 rounded-lg bg-violet-600/30 border border-violet-500/40"
-              />
-            )}
-            <span className="relative">{t === 'memory' ? 'Memory' : 'Documents'}</span>
+            <Icon className="h-4 w-4" />
+            {label}
           </button>
         ))}
       </div>
@@ -431,12 +428,13 @@ export default function KnowledgePage() {
       <AnimatePresence mode="wait">
         <motion.div
           key={tab}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.15 }}
+          initial={{ opacity: 0, x: 10 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -10 }}
+          transition={{ duration: 0.2 }}
         >
-          {tab === 'memory' ? <MemoryTab /> : <DocumentsTab />}
+          {tab === 'memory' && <MemoryTab />}
+          {tab === 'documents' && <DocumentsTab />}
         </motion.div>
       </AnimatePresence>
     </div>
