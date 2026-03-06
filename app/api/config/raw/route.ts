@@ -1,4 +1,4 @@
-// GET /api/agents - List agent configurations from openclaw.json
+// GET /api/config/raw - Get raw openclaw.json content
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
@@ -11,19 +11,15 @@ const OPENCLAW_CONFIG = path.join(
 export async function GET(request: NextRequest) {
   try {
     const configContent = await fs.readFile(OPENCLAW_CONFIG, "utf-8");
-    const config = JSON.parse(configContent);
-
-    const agents = config.agents?.list || [];
-    const agentModels = config.models || [];
 
     return NextResponse.json({
-      agents,
-      models: agentModels,
+      content: configContent,
+      path: OPENCLAW_CONFIG,
     });
   } catch (error: any) {
-    console.error("Failed to read agent config:", error);
+    console.error("Failed to read openclaw.json:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to read agent configuration" },
+      { error: error.message || "Failed to read configuration" },
       { status: 500 }
     );
   }
